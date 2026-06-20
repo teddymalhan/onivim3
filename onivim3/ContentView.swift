@@ -1,59 +1,73 @@
-//
-//  ContentView.swift
-//  onivim3
-//
-//  Created by Teddy Malhan on 2026-06-20.
-//
-
 import SwiftUI
-import SwiftData
+import UniformTypeIdentifiers
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+    @State private var session = NeovimSession()
+    @State private var isOpeningFile = false
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
+        VStack(spacing: 0) {
+            EditorGridRepresentable(session: session, grid: session.grid)
+                .frame(minWidth: 720, minHeight: 420)
+
+            Divider()
+
+            statusBar
+        }
+        .toolbar {
+            ToolbarItemGroup {
+                Button("Open File", systemImage: "doc") {
+                    isOpeningFile = true
                 }
-                .onDelete(perform: deleteItems)
-            }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-            .toolbar {
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
+
+                Button("Save", systemImage: "square.and.arrow.down") {
+                    session.save()
                 }
+                .disabled(session.state != .running)
             }
-        } detail: {
-            Text("Select an item")
+        }
+        .fileImporter(
+            isPresented: $isOpeningFile,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                _ = url.startAccessingSecurityScopedResource()
+                session.openFile(url)
+            }
+        }
+        .onAppear {
+            session.startIfNeeded()
+        }
+        .onDisappear {
+            session.stop()
         }
     }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
+    private var statusBar: some View {
+        HStack(spacing: 12) {
+            Text(session.mode)
+                .font(.system(.caption, design: .monospaced))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(.quaternary)
+                .clipShape(.rect(cornerRadius: 4))
 
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
-            }
+            Text(session.status)
+                .font(.caption)
+                .lineLimit(1)
+
+            Spacer()
+
+            Text("\(session.grid.columns)×\(session.grid.rows)")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
     }
 }
 
 #Preview {
     ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
 }
