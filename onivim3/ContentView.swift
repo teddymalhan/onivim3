@@ -4,6 +4,13 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @State private var session = NeovimSession()
     @State private var isOpeningFile = false
+    let startupFile: URL?
+    @State private var didOpenStartupFile = false
+
+    init(startupFile: URL? = nil) {
+        self.startupFile = startupFile
+    }
+
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,9 +49,18 @@ struct ContentView: View {
         }
         .onAppear {
             session.startIfNeeded()
+            openStartupFileIfNeeded()
         }
         .onDisappear {
             session.stop()
+        }
+    }
+
+    private func openStartupFileIfNeeded() {
+        guard !didOpenStartupFile, let startupFile else { return }
+        didOpenStartupFile = true
+        Task {
+            try? await session.openFile(startupFile)
         }
     }
 

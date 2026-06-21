@@ -32,6 +32,22 @@ final class onivim3UITests: XCTestCase {
     }
 
     @MainActor
+    func testLaunchArgumentOpensStartupFile() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let fileURL = directory.appendingPathComponent("startup-ui.txt")
+        FileManager.default.createFile(atPath: fileURL.path, contents: Data("from cli\n".utf8))
+
+        let app = XCUIApplication()
+        app.launchArguments = [fileURL.path]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Opened startup-ui.txt"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {

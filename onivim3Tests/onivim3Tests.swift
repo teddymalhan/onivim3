@@ -198,6 +198,34 @@ struct onivim3Tests {
     }
 
     @MainActor
+    @Test func sessionOpensStartupFileArgumentAndSavesEdits() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent("startup file.txt")
+        FileManager.default.createFile(atPath: fileURL.path, contents: Data("seed\n".utf8))
+
+        let startupFile = try #require(StartupFile.fromLaunchArguments([
+            "/Applications/onivim3.app/Contents/MacOS/onivim3",
+            fileURL.path
+        ]))
+
+        let session = NeovimSession()
+        defer {
+            session.stop()
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try await session.openFile(startupFile)
+        try await waitForBufferLines(["seed"], session: session)
+        _ = try await session.sendInputAndWait("A cli<Esc>")
+        try await waitForBufferLines(["seed cli"], session: session)
+        try await session.save()
+
+        let persisted = try String(contentsOf: fileURL, encoding: .utf8)
+        #expect(persisted == "seed cli\n")
+    }
+
+    @MainActor
     @Test func sessionSupportsMinimalVimMotions() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -266,6 +294,27 @@ struct onivim3Tests {
         session.sendInput(":q<CR>")
         try await waitForStopped(session)
         #expect(session.status == "Neovim stopped")
+    }
+
+    @Test func startupFileLaunchIntentChoosesFirstExistingFileArgument() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let folderURL = directory.appendingPathComponent("workspace", isDirectory: true)
+        let fileURL = directory.appendingPathComponent("launch target.txt")
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: fileURL.path, contents: Data("hello\n".utf8))
+
+        let startupFile = StartupFile.fromLaunchArguments([
+            "/Applications/onivim3.app/Contents/MacOS/onivim3",
+            "-ApplePersistenceIgnoreState",
+            "YES",
+            folderURL.path,
+            fileURL.path
+        ])
+
+        #expect(startupFile == fileURL)
     }
 
     @Test func vimFilenameAndInputEscapingProtectCommandBoundaries() {
