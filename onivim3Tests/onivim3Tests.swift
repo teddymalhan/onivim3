@@ -43,20 +43,31 @@ struct onivim3Tests {
     @Test func redrawEventsMutateGridAndModeSnapshot() {
         let session = NeovimSession()
         session.applyRedraw([
-            .array([.string("grid_resize"), .uint(1), .uint(8), .uint(2)]),
+            .array([
+                .string("grid_resize"),
+                .array([.uint(1), .uint(8), .uint(2)])
+            ]),
             .array([
                 .string("grid_line"),
-                .uint(1),
-                .uint(0),
-                .uint(0),
                 .array([
-                    .array([.string("h")]),
-                    .array([.string("i")]),
-                    .array([.string(" "), .uint(0), .uint(6)])
+                    .uint(1),
+                    .uint(0),
+                    .uint(0),
+                    .array([
+                        .array([.string("h")]),
+                        .array([.string("i")]),
+                        .array([.string(" "), .uint(0), .uint(6)])
+                    ])
                 ])
             ]),
-            .array([.string("grid_cursor_goto"), .uint(1), .uint(0), .uint(2)]),
-            .array([.string("mode_change"), .string("insert"), .uint(1)])
+            .array([
+                .string("grid_cursor_goto"),
+                .array([.uint(1), .uint(0), .uint(2)])
+            ]),
+            .array([
+                .string("mode_change"),
+                .array([.string("insert"), .uint(1)])
+            ])
         ])
 
         #expect(session.grid.columns == 8)

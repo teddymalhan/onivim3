@@ -109,34 +109,29 @@ final class NeovimSession {
         applyRedraw(batches)
     }
 
-    func applyRedraw(_ batches: [MessagePackValue]) {
+    func applyRedraw(_ events: [MessagePackValue]) {
         var nextGrid = grid
-        for batch in batches {
-            guard case .array(let events) = batch,
-                  let name = events.first?.stringValue else { continue }
+        for event in events {
+            guard case .array(let parts) = event,
+                  let name = parts.first?.stringValue else { continue }
+            let calls = parts.dropFirst().compactMap(\.arrayValue)
             switch name {
             case "grid_resize":
-                if events.count >= 4,
-                   let columns = events[2].intValue,
-                   let rows = events[3].intValue {
-                    nextGrid.resize(columns: columns, rows: rows)
-                }
+                for call in calls { applyGridResize(call, to: &nextGrid) }
             case "grid_clear":
-                nextGrid.clear()
+                if calls.isEmpty {
+                    nextGrid.clear()
+                } else {
+                    for _ in calls { nextGrid.clear() }
+                }
             case "grid_line":
-                applyGridLine(events, to: &nextGrid)
+                for call in calls { applyGridLine(call, to: &nextGrid) }
             case "grid_cursor_goto":
-                if events.count >= 4,
-                   let row = events[2].intValue,
-                   let column = events[3].intValue {
-                    nextGrid.cursor = EditorGrid.Cursor(row: row, column: column)
-                }
+                for call in calls { applyGridCursor(call, to: &nextGrid) }
             case "grid_scroll":
-                applyGridScroll(events, to: &nextGrid)
+                for call in calls { applyGridScroll(call, to: &nextGrid) }
             case "mode_change":
-                if events.count >= 2, let modeName = events[1].stringValue {
-                    mode = modeName
-                }
+                for call in calls { applyModeChange(call) }
             default:
                 continue
             }
@@ -144,11 +139,18 @@ final class NeovimSession {
         grid = nextGrid
     }
 
-    private func applyGridLine(_ events: [MessagePackValue], to grid: inout EditorGrid) {
-        guard events.count >= 5,
-              let row = events[2].intValue,
-              let startColumn = events[3].intValue,
-              let cells = events[4].arrayValue else { return }
+    private func applyGridResize(_ call: [MessagePackValue], to grid: inout EditorGrid) {
+        guard call.count >= 3,
+              let columns = call[1].intValue,
+              let rows = call[2].intValue else { return }
+        grid.resize(columns: columns, rows: rows)
+    }
+
+    private func applyGridLine(_ call: [MessagePackValue], to grid: inout EditorGrid) {
+        guard call.count >= 4,
+              let row = call[1].intValue,
+              let startColumn = call[2].intValue,
+              let cells = call[3].arrayValue else { return }
         var column = startColumn
         for cell in cells {
             guard let parts = cell.arrayValue,
@@ -161,14 +163,26 @@ final class NeovimSession {
         }
     }
 
-    private func applyGridScroll(_ events: [MessagePackValue], to grid: inout EditorGrid) {
-        guard events.count >= 7,
-              let top = events[2].intValue,
-              let bottom = events[3].intValue,
-              let left = events[4].intValue,
-              let right = events[5].intValue,
-              let rows = events[6].intValue else { return }
+    private func applyGridCursor(_ call: [MessagePackValue], to grid: inout EditorGrid) {
+        guard call.count >= 3,
+              let row = call[1].intValue,
+              let column = call[2].intValue else { return }
+        grid.cursor = EditorGrid.Cursor(row: row, column: column)
+    }
+
+    private func applyGridScroll(_ call: [MessagePackValue], to grid: inout EditorGrid) {
+        guard call.count >= 6,
+              let top = call[1].intValue,
+              let bottom = call[2].intValue,
+              let left = call[3].intValue,
+              let right = call[4].intValue,
+              let rows = call[5].intValue else { return }
         grid.scroll(top: top, bottom: bottom, left: left, right: right, rows: rows)
+    }
+
+    private func applyModeChange(_ call: [MessagePackValue]) {
+        guard let modeName = call.first?.stringValue else { return }
+        mode = modeName
     }
 }
 
