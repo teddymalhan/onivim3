@@ -68,6 +68,9 @@ struct onivim3Tests {
             .array([
                 .string("mode_change"),
                 .array([.string("insert"), .uint(1)])
+            ]),
+            .array([
+                .string("flush")
             ])
         ])
 
@@ -76,6 +79,54 @@ struct onivim3Tests {
         #expect(session.grid.lineString(row: 0) == "hi      ")
         #expect(session.grid.cursor == EditorGrid.Cursor(row: 0, column: 2))
         #expect(session.mode == "insert")
+    }
+
+    @MainActor
+    @Test func redrawBatchesDoNotPublishIntermediateGridBeforeFlush() {
+        let session = NeovimSession()
+        session.applyRedraw([
+            .array([
+                .string("grid_resize"),
+                .array([.uint(1), .uint(8), .uint(2)])
+            ]),
+            .array([
+                .string("grid_line"),
+                .array([
+                    .uint(1),
+                    .uint(1),
+                    .uint(0),
+                    .array([
+                        .array([.string("b"), .uint(0), .uint(8)])
+                    ])
+                ])
+            ])
+        ])
+
+        #expect(session.grid.columns == 100)
+        #expect(session.grid.rows == 36)
+        #expect(session.grid.lineString(row: 1).trimmingCharacters(in: .whitespaces).isEmpty)
+
+        session.applyRedraw([
+            .array([
+                .string("grid_line"),
+                .array([
+                    .uint(1),
+                    .uint(0),
+                    .uint(0),
+                    .array([
+                        .array([.string("a"), .uint(0), .uint(8)])
+                    ])
+                ])
+            ]),
+            .array([
+                .string("flush")
+            ])
+        ])
+
+        #expect(session.grid.columns == 8)
+        #expect(session.grid.rows == 2)
+        #expect(session.grid.lineString(row: 0) == "aaaaaaaa")
+        #expect(session.grid.lineString(row: 1) == "bbbbbbbb")
     }
 
     @MainActor

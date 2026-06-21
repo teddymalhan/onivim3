@@ -31,6 +31,7 @@ final class NeovimSession {
     private var rpc: NeovimRPC?
     private var pendingColumns = 100
     private var pendingRows = 36
+    private var pendingRedrawGrid: EditorGrid?
 
     func startIfNeeded() {
         guard state == .stopped else { return }
@@ -180,7 +181,8 @@ final class NeovimSession {
     }
 
     func applyRedraw(_ events: [MessagePackValue]) {
-        var nextGrid = grid
+        var nextGrid = pendingRedrawGrid ?? grid
+        var didFlush = false
         for event in events {
             guard case .array(let parts) = event,
                   let name = parts.first?.stringValue else { continue }
@@ -202,11 +204,19 @@ final class NeovimSession {
                 for call in calls { applyGridScroll(call, to: &nextGrid) }
             case "mode_change":
                 for call in calls { applyModeChange(call) }
+            case "flush":
+                didFlush = true
             default:
                 continue
             }
         }
-        grid = nextGrid
+
+        if didFlush {
+            grid = nextGrid
+            pendingRedrawGrid = nil
+        } else {
+            pendingRedrawGrid = nextGrid
+        }
     }
 
     private func applyGridResize(_ call: [MessagePackValue], to grid: inout EditorGrid) {
