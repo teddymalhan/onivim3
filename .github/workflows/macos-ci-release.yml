@@ -25,16 +25,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Neovim test dependency
-        run: |
-          if ! command -v nvim >/dev/null 2>&1; then
-            brew install neovim
-          fi
-
-      - name: Show tool versions
-        run: |
-          xcodebuild -version
-          nvim --version
+      - name: Show Xcode version
+        run: xcodebuild -version
 
       - name: Run macOS tests
         run: |
@@ -77,6 +69,12 @@ jobs:
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Verify bundled Neovim runtime
+        run: |
+          APP_PATH="build/$APP_NAME.xcarchive/Products/Applications/$APP_NAME.app"
+          test -x "$APP_PATH/Contents/Resources/Neovim/bin/nvim"
+          "$APP_PATH/Contents/Resources/Neovim/bin/nvim" --version
 
       - name: Sign and notarize when Apple secrets are configured
         run: |
