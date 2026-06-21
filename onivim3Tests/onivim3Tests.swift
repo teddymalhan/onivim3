@@ -112,6 +112,39 @@ struct onivim3Tests {
         #expect(persisted == "hello\n")
     }
 
+    @MainActor
+    @Test func sessionOpenEditSaveQuitReopenPersistsFile() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent("session acceptance.txt")
+        FileManager.default.createFile(atPath: fileURL.path, contents: Data())
+
+        let session = NeovimSession()
+        defer {
+            session.stop()
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try await session.openFile(fileURL)
+        _ = try await session.sendInputAndWait("ihello<Esc>")
+        try await waitForBufferLine("hello", session: session)
+        try await session.save()
+
+        let persisted = try String(contentsOf: fileURL, encoding: .utf8)
+        #expect(persisted == "hello\n")
+        #expect(session.openedFileURL == fileURL)
+        #expect(session.status == "Saved \(fileURL.lastPathComponent)")
+
+        session.stop()
+
+        let reopenedSession = NeovimSession()
+        defer { reopenedSession.stop() }
+
+        try await reopenedSession.openFile(fileURL)
+        try await waitForBufferLine("hello", session: reopenedSession)
+        #expect(reopenedSession.openedFileURL == fileURL)
+    }
+
     @Test func vimFilenameAndInputEscapingProtectCommandBoundaries() {
         #expect(VimFilename.escape("/tmp/a b|c%#<x>.txt") == "/tmp/a\\ b\\|c\\%\\#\\<x\\>.txt")
         #expect(NeovimInput.escapeLiteralText("a < b") == "a <lt> b")
@@ -125,6 +158,17 @@ struct onivim3Tests {
                 params: [.uint(0), .uint(0), .int(-1), .bool(true)]
             )
             if result == .array([.string(expected)]) {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        throw TestFailure.bufferDidNotReachExpectedText
+    }
+
+    @MainActor
+    private func waitForBufferLine(_ expected: String, session: NeovimSession) async throws {
+        for _ in 0..<100 {
+            if try await session.currentBufferLines() == [expected] {
                 return
             }
             try await Task.sleep(for: .milliseconds(20))

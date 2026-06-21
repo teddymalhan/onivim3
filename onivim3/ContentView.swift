@@ -21,7 +21,9 @@ struct ContentView: View {
                 }
 
                 Button("Save", systemImage: "square.and.arrow.down") {
-                    session.save()
+                    Task {
+                        try? await session.save()
+                    }
                 }
                 .disabled(session.state != .running)
             }
@@ -33,7 +35,9 @@ struct ContentView: View {
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
                 _ = url.startAccessingSecurityScopedResource()
-                session.openFile(url)
+                Task {
+                    try? await session.openFile(url)
+                }
             }
         }
         .onAppear {

@@ -10,6 +10,17 @@ final class NeovimSession {
         case running
         case failed(String)
     }
+    enum SessionError: LocalizedError {
+        case notRunning(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .notRunning(let reason):
+                return reason
+            }
+        }
+    }
+
 
     private(set) var state: State = .stopped
     private(set) var mode: String = "normal"
@@ -63,16 +74,27 @@ final class NeovimSession {
         rpc?.request(method: "nvim_ui_try_resize", params: [.uint(UInt64(columns)), .uint(UInt64(rows))])
     }
 
-    func openFile(_ url: URL) {
-        startIfNeeded()
-        openedFileURL = url
-        status = "Opened \(url.lastPathComponent)"
-        rpc?.request(method: "nvim_command", params: [.string("edit " + VimFilename.escape(url.path))])
+    func openFile(_ url: URL) async throws {
+        let rpc = try runningRPC()
+        do {
+            _ = try await rpc.requestValue(method: "nvim_command", params: [.string("edit " + VimFilename.escape(url.path))])
+            openedFileURL = url
+            status = "Opened \(url.lastPathComponent)"
+        } catch {
+            status = "Open failed: \(error.localizedDescription)"
+            throw error
+        }
     }
 
-    func save() {
-        rpc?.request(method: "nvim_command", params: [.string("write")])
-        status = "Saved \(openedFileURL?.lastPathComponent ?? "buffer")"
+    func save() async throws {
+        let rpc = try runningRPC()
+        do {
+            _ = try await rpc.requestValue(method: "nvim_command", params: [.string("write")])
+            status = "Saved \(openedFileURL?.lastPathComponent ?? "buffer")"
+        } catch {
+            status = "Save failed: \(error.localizedDescription)"
+            throw error
+        }
     }
 
     func sendInput(_ input: String) {
@@ -81,8 +103,33 @@ final class NeovimSession {
         rpc?.request(method: "nvim_input", params: [.string(input)])
     }
 
+    @discardableResult
+    func sendInputAndWait(_ input: String) async throws -> MessagePackValue {
+        guard !input.isEmpty else { return .uint(0) }
+        let rpc = try runningRPC()
+        return try await rpc.requestValue(method: "nvim_input", params: [.string(input)])
+    }
+
     func sendLiteralText(_ text: String) {
         sendInput(NeovimInput.escapeLiteralText(text))
+    }
+
+    func currentBufferLines() async throws -> [String] {
+        let rpc = try runningRPC()
+        let result = try await rpc.requestValue(
+            method: "nvim_buf_get_lines",
+            params: [.uint(0), .uint(0), .int(-1), .bool(true)]
+        )
+        guard case .array(let lines) = result else { return [] }
+        return lines.compactMap(\.stringValue)
+    }
+
+    private func runningRPC() throws -> NeovimRPC {
+        startIfNeeded()
+        guard let rpc, state == .running else {
+            throw SessionError.notRunning(status)
+        }
+        return rpc
     }
 
     private func attachUI(columns: Int, rows: Int) {
