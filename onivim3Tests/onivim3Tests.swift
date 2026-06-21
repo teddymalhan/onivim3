@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import onivim3
 
+@Suite(.serialized)
 struct onivim3Tests {
     @Test func messagePackRoundTripsNeovimRequestShape() throws {
         let value = MessagePackValue.array([
