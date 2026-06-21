@@ -145,6 +145,77 @@ struct onivim3Tests {
         #expect(reopenedSession.openedFileURL == fileURL)
     }
 
+    @MainActor
+    @Test func sessionSupportsMinimalVimMotions() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent("minimal-motions.txt")
+        FileManager.default.createFile(atPath: fileURL.path, contents: Data("abc\ndef\n".utf8))
+
+        let session = NeovimSession()
+        defer {
+            session.stop()
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try await session.openFile(fileURL)
+        try await waitForBufferLines(["abc", "def"], session: session)
+        try await waitForCursor(EditorGrid.Cursor(row: 0, column: 0), session: session)
+
+        _ = try await session.sendInputAndWait("j")
+        try await waitForCursor(EditorGrid.Cursor(row: 1, column: 0), session: session)
+
+        _ = try await session.sendInputAndWait("l")
+        try await waitForCursor(EditorGrid.Cursor(row: 1, column: 1), session: session)
+
+        _ = try await session.sendInputAndWait("h")
+        try await waitForCursor(EditorGrid.Cursor(row: 1, column: 0), session: session)
+
+        _ = try await session.sendInputAndWait("k")
+        try await waitForCursor(EditorGrid.Cursor(row: 0, column: 0), session: session)
+    }
+
+    @MainActor
+    @Test func sessionSupportsMinimalVimEditingWriteAndQuit() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fileURL = directory.appendingPathComponent("minimal-editing.txt")
+        FileManager.default.createFile(atPath: fileURL.path, contents: Data())
+
+        let session = NeovimSession()
+        defer {
+            session.stop()
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        try await session.openFile(fileURL)
+
+        _ = try await session.sendInputAndWait("iabc<Esc>")
+        try await waitForBufferLines(["abc"], session: session)
+
+        _ = try await session.sendInputAndWait("a!<Esc>")
+        try await waitForBufferLines(["abc!"], session: session)
+
+        _ = try await session.sendInputAndWait("hx")
+        try await waitForBufferLines(["ab!"], session: session)
+
+        _ = try await session.sendInputAndWait("u")
+        try await waitForBufferLines(["abc!"], session: session)
+
+        _ = try await session.sendInputAndWait("dd")
+        try await waitForBufferLines([""], session: session)
+
+        _ = try await session.sendInputAndWait("u")
+        try await waitForBufferLines(["abc!"], session: session)
+
+        session.sendInput(":w<CR>")
+        try await waitForFileContents("abc!\n", at: fileURL)
+
+        session.sendInput(":q<CR>")
+        try await waitForStopped(session)
+        #expect(session.status == "Neovim stopped")
+    }
+
     @Test func vimFilenameAndInputEscapingProtectCommandBoundaries() {
         #expect(VimFilename.escape("/tmp/a b|c%#<x>.txt") == "/tmp/a\\ b\\|c\\%\\#\\<x\\>.txt")
         #expect(NeovimInput.escapeLiteralText("a < b") == "a <lt> b")
@@ -176,7 +247,53 @@ struct onivim3Tests {
         throw TestFailure.bufferDidNotReachExpectedText
     }
 
+    @MainActor
+    private func waitForBufferLines(_ expected: [String], session: NeovimSession) async throws {
+        for _ in 0..<100 {
+            if try await session.currentBufferLines() == expected {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        throw TestFailure.bufferDidNotReachExpectedText
+    }
+
+    @MainActor
+    private func waitForCursor(_ expected: EditorGrid.Cursor, session: NeovimSession) async throws {
+        for _ in 0..<100 {
+            if try await session.currentCursor() == expected {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        throw TestFailure.cursorDidNotReachExpectedPosition
+    }
+
+    @MainActor
+    private func waitForStopped(_ session: NeovimSession) async throws {
+        for _ in 0..<100 {
+            if session.state == .stopped {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        throw TestFailure.sessionDidNotStop
+    }
+
+    private func waitForFileContents(_ expected: String, at fileURL: URL) async throws {
+        for _ in 0..<100 {
+            if (try? String(contentsOf: fileURL, encoding: .utf8)) == expected {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        throw TestFailure.fileDidNotReachExpectedContents
+    }
+
     private enum TestFailure: Error {
         case bufferDidNotReachExpectedText
+        case cursorDidNotReachExpectedPosition
+        case fileDidNotReachExpectedContents
+        case sessionDidNotStop
     }
 }

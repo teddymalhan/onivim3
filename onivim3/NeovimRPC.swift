@@ -27,6 +27,11 @@ final class NeovimRPC {
         }
     }
 
+    enum Exit: Equatable {
+        case clean
+        case failed(String)
+    }
+
     private let process: Process
     private let input: Pipe
     private let output: Pipe
@@ -37,11 +42,11 @@ final class NeovimRPC {
     private var nextMessageID: Int64 = 1
     private var responseContinuations: [Int64: CheckedContinuation<MessagePackValue, Error>] = [:]
     private let onMessage: (MessagePackValue) -> Void
-    private let onExit: (String) -> Void
+    private let onExit: (Exit) -> Void
 
     init(
         onMessage: @escaping (MessagePackValue) -> Void,
-        onExit: @escaping (String) -> Void
+        onExit: @escaping (Exit) -> Void
     ) throws {
         guard let executableURL = Self.resolveExecutableURL() else {
             throw LaunchError.executableNotFound
@@ -62,7 +67,7 @@ final class NeovimRPC {
         process.terminationHandler = { [weak self] process in
             let status = process.terminationStatus
             Task { @MainActor [weak self] in
-                self?.fail("Neovim exited with status \(status)")
+                self?.handleTermination(status: status)
             }
         }
 
@@ -150,13 +155,22 @@ final class NeovimRPC {
         }
     }
 
+    private func handleTermination(status: Int32) {
+        let continuations = responseContinuations.values
+        responseContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume(throwing: RPCError.terminated("Neovim exited with status \(status)"))
+        }
+        onExit(status == 0 ? .clean : .failed("Neovim exited with status \(status)"))
+    }
+
     private func fail(_ reason: String) {
         let continuations = responseContinuations.values
         responseContinuations.removeAll()
         for continuation in continuations {
             continuation.resume(throwing: RPCError.terminated(reason))
         }
-        onExit(reason)
+        onExit(.failed(reason))
     }
 
     private static func resolveExecutableURL() -> URL? {

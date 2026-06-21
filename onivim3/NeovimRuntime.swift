@@ -40,9 +40,8 @@ final class NeovimSession {
         do {
             let rpc = try NeovimRPC(onMessage: { [weak self] message in
                 self?.handleMessage(message)
-            }, onExit: { [weak self] reason in
-                self?.state = .failed(reason)
-                self?.status = reason
+            }, onExit: { [weak self] exit in
+                self?.handleExit(exit)
             })
             self.rpc = rpc
             state = .running
@@ -124,6 +123,18 @@ final class NeovimSession {
         return lines.compactMap(\.stringValue)
     }
 
+    func currentCursor() async throws -> EditorGrid.Cursor {
+        let rpc = try runningRPC()
+        let result = try await rpc.requestValue(method: "nvim_win_get_cursor", params: [.uint(0)])
+        guard case .array(let values) = result,
+              values.count >= 2,
+              let oneBasedRow = values[0].intValue,
+              let column = values[1].intValue else {
+            return EditorGrid.Cursor(row: 0, column: 0)
+        }
+        return EditorGrid.Cursor(row: max(0, oneBasedRow - 1), column: max(0, column))
+    }
+
     private func runningRPC() throws -> NeovimRPC {
         startIfNeeded()
         guard let rpc, state == .running else {
@@ -154,6 +165,18 @@ final class NeovimSession {
               fields[1].stringValue == "redraw",
               let batches = fields[2].arrayValue else { return }
         applyRedraw(batches)
+    }
+
+    private func handleExit(_ exit: NeovimRPC.Exit) {
+        rpc = nil
+        switch exit {
+        case .clean:
+            state = .stopped
+            status = "Neovim stopped"
+        case .failed(let reason):
+            state = .failed(reason)
+            status = reason
+        }
     }
 
     func applyRedraw(_ events: [MessagePackValue]) {
