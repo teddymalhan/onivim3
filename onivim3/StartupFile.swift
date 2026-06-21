@@ -8,15 +8,8 @@ enum StartupFile {
     static func fromLaunchArguments(_ arguments: [String], fileManager: FileManager = .default) -> URL? {
         guard arguments.count > 1 else { return nil }
 
-        var skipsNextOptionValue = false
         for argument in arguments.dropFirst() {
-            if skipsNextOptionValue {
-                skipsNextOptionValue = false
-                continue
-            }
-
             if argument.hasPrefix("-") {
-                skipsNextOptionValue = true
                 continue
             }
 

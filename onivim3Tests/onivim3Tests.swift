@@ -311,6 +311,7 @@ struct onivim3Tests {
             "-ApplePersistenceIgnoreState",
             "YES",
             folderURL.path,
+            "-NSTreatUnknownArgumentsAsOpen",
             fileURL.path
         ])
 
